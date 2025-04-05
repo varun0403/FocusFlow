@@ -4,24 +4,18 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.shape.RoundedCornerShape
 import com.google.firebase.Firebase
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            EmployeeTaskManager()
-        }
-    }
-}
 
 data class TaskData(
     val taskDesc: String = "",
@@ -31,79 +25,72 @@ data class TaskData(
 )
 
 @Composable
-fun EmployeeTaskManager() {
+fun EmployerTaskManager() {
     var selectedYear by remember { mutableStateOf("") }
     var selectedMonth by remember { mutableStateOf("") }
     var selectedWeek by remember { mutableStateOf("") }
     var selectedDay by remember { mutableStateOf("") }
 
-    val taskList = remember { mutableStateListOf(TaskData("", "", "")) }
+    val taskList = remember { mutableStateListOf(TaskData("", "", "", 0)) }
+    val fetchedTasks = remember { mutableStateListOf<TaskData>() }
+
     val taskDataMap = remember {
         mutableStateOf(
             mutableMapOf<String, MutableMap<String, MutableMap<String, MutableMap<String, MutableList<TaskData>>>>>()
         )
     }
 
+    LaunchedEffect(selectedYear, selectedMonth, selectedWeek, selectedDay) {
+        if (selectedYear.isNotEmpty() && selectedMonth.isNotEmpty() && selectedWeek.isNotEmpty() && selectedDay.isNotEmpty()) {
+            fetchExistingTasks(selectedYear, selectedMonth, selectedWeek, selectedDay, fetchedTasks)
+        }
+    }
+
     Column(modifier = Modifier.padding(16.dp)) {
-        Text("Employee Task Manager", style = MaterialTheme.typography.headlineSmall, fontSize = 22.sp)
+        Text("Employer Task Manager", style = MaterialTheme.typography.headlineSmall, fontSize = 22.sp)
         Spacer(modifier = Modifier.height(16.dp))
 
         // First row (Year + Month)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DropdownField("Year", listOf("2024", "2025"), selectedYear, { selectedYear = it }, Modifier.weight(1f))
             DropdownField(
-                label = "Year",
-                options = listOf("2024", "2025"),
-                selectedOption = selectedYear,
-                onOptionSelected = { selectedYear = it },
-                modifier = Modifier.weight(1f)
-            )
-            DropdownField(
-                label = "Month",
-                options = listOf(
-                    "January", "February", "March", "April", "May", "June",
-                    "July", "August", "September", "October", "November", "December"
-                ),
-                selectedOption = selectedMonth,
-                onOptionSelected = { selectedMonth = it },
-                modifier = Modifier.weight(1f)
+                "Month",
+                listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+                selectedMonth, { selectedMonth = it }, Modifier.weight(1f)
             )
         }
 
         // Second row (Week + Day)
-        Row(modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DropdownField(
-                label = "Week",
-                options = listOf("Week 1", "Week 2", "Week 3", "Week 4"),
-                selectedOption = selectedWeek,
-                onOptionSelected = { selectedWeek = it },
-                modifier = Modifier.weight(1f)
-            )
-            DropdownField(
-                label = "Day",
-                options = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
-                selectedOption = selectedDay,
-                onOptionSelected = { selectedDay = it },
-                modifier = Modifier.weight(1f)
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            DropdownField("Week", listOf("Week 1", "Week 2", "Week 3", "Week 4"), selectedWeek, { selectedWeek = it }, Modifier.weight(1f))
+            DropdownField("Day", listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), selectedDay, { selectedDay = it }, Modifier.weight(1f))
         }
 
-        if (selectedYear.isNotEmpty() && selectedMonth.isNotEmpty() &&
-            selectedWeek.isNotEmpty() && selectedDay.isNotEmpty()
-        ) {
+        if (selectedYear.isNotEmpty() && selectedMonth.isNotEmpty() && selectedWeek.isNotEmpty() && selectedDay.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Assign Tasks:", style = MaterialTheme.typography.titleMedium)
+            Text("Already Assigned Tasks:", style = MaterialTheme.typography.titleMedium)
+            if (fetchedTasks.isEmpty()) {
+                Text("No tasks found for this day.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                fetchedTasks.forEach {
+                    ExistingTaskCard(it)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Assign New Tasks:", style = MaterialTheme.typography.titleMedium)
 
             taskList.forEachIndexed { index, task ->
                 TaskEntry(task) { updatedTask -> taskList[index] = updatedTask }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { taskList.add(TaskData("", "", "")) },
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
+                Button(onClick = { taskList.add(TaskData()) }, modifier = Modifier.padding(top = 8.dp)) {
                     Text("+ Add Task")
                 }
 
@@ -113,18 +100,15 @@ fun EmployeeTaskManager() {
                         val yearMap = taskDataMap.value.getOrPut(selectedYear) { mutableMapOf() }
                         val monthMap = yearMap.getOrPut(selectedMonth) { mutableMapOf() }
                         val weekMap = monthMap.getOrPut(selectedWeek) { mutableMapOf() }
-                        weekMap[selectedDay] = tasksForDay.toMutableList()
-                        Log.d("OP", taskDataMap.value.toString())
+                        weekMap[selectedDay] = tasksForDay
                         uploadTasks(taskDataMap.value)
-                        // ✅ Clear text fields by resetting task list
                         taskList.clear()
-                        taskList.add(TaskData("", "", ""))  // Add an empty task to keep UI structure
+                        taskList.add(TaskData())
                     },
                     modifier = Modifier.padding(top = 8.dp)
                 ) {
                     Text("Submit")
                 }
-
             }
         }
     }
@@ -140,10 +124,7 @@ fun DropdownField(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Box(
-        modifier = modifier
-            .height(56.dp)
-    ) {
+    Box(modifier = modifier.height(56.dp)) {
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxSize(),
@@ -152,19 +133,12 @@ fun DropdownField(
             Text(text = selectedOption.ifEmpty { label })
         }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.widthIn(min = 180.dp)
-        ) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onOptionSelected(option)
-                        expanded = false
-                    }
-                )
+                DropdownMenuItem(text = { Text(option) }, onClick = {
+                    onOptionSelected(option)
+                    expanded = false
+                })
             }
         }
     }
@@ -184,20 +158,30 @@ fun TaskEntry(taskData: TaskData, onTaskChange: (TaskData) -> Unit) {
             modifier = Modifier.weight(1f),
             label = { Text("Task Description") }
         )
-        DropdownField(
-            label = "Category",
-            options = listOf("Delegate", "Growth", "Important", "Not Important"),
-            selectedOption = taskData.category,
-            onOptionSelected = { onTaskChange(taskData.copy(category = it)) },
-            modifier = Modifier.weight(1f)
-        )
-        DropdownField(
-            label = "Type",
-            options = listOf("Call", "Meeting", "Physical Task"),
-            selectedOption = taskData.type, // ✅ Used `type` instead of `category`
-            onOptionSelected = { onTaskChange(taskData.copy(type = it)) }, // ✅ Updated correctly
-            modifier = Modifier.weight(1f)
-        )
+        DropdownField("Category", listOf("Delegate", "Growth", "Important", "Not Important"), taskData.category, {
+            onTaskChange(taskData.copy(category = it))
+        }, Modifier.weight(1f))
+        DropdownField("Type", listOf("Call", "Meeting", "Physical Task"), taskData.type, {
+            onTaskChange(taskData.copy(type = it))
+        }, Modifier.weight(1f))
+    }
+}
+
+@Composable
+fun ExistingTaskCard(task: TaskData) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .background(Color.LightGray),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("Task: ${task.taskDesc}", fontSize = 14.sp)
+            Text("Category: ${task.category}", fontSize = 14.sp)
+            Text("Type: ${task.type}", fontSize = 14.sp)
+            Text("Status: ${task.status}", fontSize = 14.sp)
+        }
     }
 }
 
@@ -208,15 +192,7 @@ fun uploadTasks(taskDataMap: Map<String, Map<String, Map<String, Map<String, Lis
         months.forEach { (month, weeks) ->
             weeks.forEach { (week, days) ->
                 days.forEach { (day, tasks) ->
-
-                    // Reference to: Tasks → year → month → week → day (collection)
-                    val dayCollectionRef = db
-                        .collection("Tasks")
-                        .document(year)
-                        .collection(month)
-                        .document(week)
-                        .collection(day)
-
+                    val dayCollectionRef = db.collection("Tasks").document(year).collection(month).document(week).collection(day)
                     tasks.forEach { task ->
                         val taskMap = mapOf(
                             "taskDesc" to task.taskDesc,
@@ -224,9 +200,7 @@ fun uploadTasks(taskDataMap: Map<String, Map<String, Map<String, Map<String, Lis
                             "type" to task.type,
                             "status" to 0
                         )
-
-                        dayCollectionRef
-                            .add(taskMap)  // auto-generates TaskID
+                        dayCollectionRef.add(taskMap)
                             .addOnSuccessListener {
                                 Log.d("Firestore", "Task uploaded successfully: ${it.id}")
                             }
@@ -238,4 +212,35 @@ fun uploadTasks(taskDataMap: Map<String, Map<String, Map<String, Map<String, Lis
             }
         }
     }
+}
+
+fun fetchExistingTasks(
+    year: String,
+    month: String,
+    week: String,
+    day: String,
+    targetList: MutableList<TaskData>
+) {
+    val db = FirebaseFirestore.getInstance()
+    db.collection("Tasks")
+        .document(year)
+        .collection(month)
+        .document(week)
+        .collection(day)
+        .get()
+        .addOnSuccessListener { snapshot ->
+            targetList.clear()
+            for (doc in snapshot.documents) {
+                val task = TaskData(
+                    taskDesc = doc.getString("taskDesc") ?: "",
+                    category = doc.getString("category") ?: "",
+                    type = doc.getString("type") ?: "",
+                    status = (doc.getLong("status") ?: 0).toInt()
+                )
+                targetList.add(task)
+            }
+        }
+        .addOnFailureListener { e ->
+            Log.e("Firestore", "Error fetching tasks", e)
+        }
 }
