@@ -1,3 +1,5 @@
+package com.example.focusflow.Employer
+
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -21,7 +23,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class TaskData(val taskDesc: String, val category: String, val type: String)
+data class TaskData(
+    val taskDesc: String = "",
+    val category: String = "",
+    val type: String = "",
+    val status: Int = 0
+)
 
 @Composable
 fun EmployeeTaskManager() {
@@ -214,7 +221,8 @@ fun uploadTasks(taskDataMap: Map<String, Map<String, Map<String, Map<String, Lis
                         val taskMap = mapOf(
                             "taskDesc" to task.taskDesc,
                             "category" to task.category,
-                            "type" to task.type
+                            "type" to task.type,
+                            "status" to 0
                         )
 
                         dayCollectionRef

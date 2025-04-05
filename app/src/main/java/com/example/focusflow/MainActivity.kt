@@ -1,6 +1,5 @@
 package com.example.focusflow
 
-import EmployeeTaskManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.focusflow.Employer.EmployeeTaskManager
+import com.example.focusflow.Employee.EmployeeTaskViewer
 import com.example.focusflow.ui.theme.FocusFlowTheme
 //import com.example.focusflow.Employer.*
 
@@ -20,7 +21,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            EmployeeTaskManager()
+            EmployeeTaskViewer()
         }
     }
 }
