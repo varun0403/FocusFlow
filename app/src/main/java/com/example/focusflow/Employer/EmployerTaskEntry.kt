@@ -1,9 +1,6 @@
 package com.example.focusflow.Employer
 
-import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,9 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
+import java.util.UUID
 
 data class TaskData(
     val taskDesc: String = "",
@@ -25,7 +24,7 @@ data class TaskData(
 )
 
 @Composable
-fun EmployerTaskManager() {
+fun EmployerTaskManager(projectId: String, employeeEmail: String, navController: NavController) {
     var selectedYear by remember { mutableStateOf("") }
     var selectedMonth by remember { mutableStateOf("") }
     var selectedWeek by remember { mutableStateOf("") }
@@ -48,6 +47,7 @@ fun EmployerTaskManager() {
 
     Column(modifier = Modifier.padding(16.dp)) {
         Text("Employer Task Manager", style = MaterialTheme.typography.headlineSmall, fontSize = 22.sp)
+        Text("Task Allocation to employee: $employeeEmail", style = MaterialTheme.typography.headlineSmall, fontSize = 22.sp)
         Spacer(modifier = Modifier.height(16.dp))
 
         // First row (Year + Month)
@@ -97,11 +97,16 @@ fun EmployerTaskManager() {
                 Button(
                     onClick = {
                         val tasksForDay = taskList.toMutableList()
+                        // Update the in-memory task map
                         val yearMap = taskDataMap.value.getOrPut(selectedYear) { mutableMapOf() }
                         val monthMap = yearMap.getOrPut(selectedMonth) { mutableMapOf() }
                         val weekMap = monthMap.getOrPut(selectedWeek) { mutableMapOf() }
                         weekMap[selectedDay] = tasksForDay
-                        uploadTasks(taskDataMap.value)
+                        uploadTasks(
+                            projectId = projectId,
+                            employeeEmail = employeeEmail,
+                            taskMap = taskDataMap.value
+                        )
                         taskList.clear()
                         taskList.add(TaskData())
                     },
@@ -109,6 +114,7 @@ fun EmployerTaskManager() {
                 ) {
                     Text("Submit")
                 }
+
             }
         }
     }
@@ -185,34 +191,36 @@ fun ExistingTaskCard(task: TaskData) {
     }
 }
 
-fun uploadTasks(taskDataMap: Map<String, Map<String, Map<String, Map<String, List<TaskData>>>>>) {
-    val db = Firebase.firestore
+fun uploadTasks(
+    projectId: String,
+    employeeEmail: String,
+    taskMap: Map<String, Map<String, Map<String, Map<String, List<TaskData>>>>>
+) {
+    val firestore = Firebase.firestore
 
-    taskDataMap.forEach { (year, months) ->
-        months.forEach { (month, weeks) ->
-            weeks.forEach { (week, days) ->
-                days.forEach { (day, tasks) ->
-                    val dayCollectionRef = db.collection("Tasks").document(year).collection(month).document(week).collection(day)
+    taskMap.forEach { (year, monthMap) ->
+        monthMap.forEach { (month, weekMap) ->
+            weekMap.forEach { (week, dayMap) ->
+                dayMap.forEach { (day, tasks) ->
                     tasks.forEach { task ->
-                        val taskMap = mapOf(
-                            "taskDesc" to task.taskDesc,
-                            "category" to task.category,
-                            "type" to task.type,
-                            "status" to 0
-                        )
-                        dayCollectionRef.add(taskMap)
-                            .addOnSuccessListener {
-                                Log.d("Firestore", "Task uploaded successfully: ${it.id}")
-                            }
-                            .addOnFailureListener { e ->
-                                Log.e("Firestore", "Error uploading task", e)
-                            }
+                        val taskId = UUID.randomUUID().toString()
+                        firestore
+                            .collection("Tasks")
+                            .document(projectId)
+                            .collection(employeeEmail)
+                            .document(year)
+                            .collection(month)
+                            .document(week)
+                            .collection(day)
+                            .document(taskId)
+                            .set(task)
                     }
                 }
             }
         }
     }
 }
+
 
 fun fetchExistingTasks(
     year: String,

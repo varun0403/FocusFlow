@@ -23,7 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.shadow
 
 @Composable
-fun EmployeeTaskViewer() {
+fun EmployeeTaskViewer(projectId: String, employeeEmail: String) {
     val firestore = Firebase.firestore
     var selectedYear by remember { mutableStateOf("") }
     var selectedMonth by remember { mutableStateOf("") }
@@ -31,15 +31,14 @@ fun EmployeeTaskViewer() {
     var selectedDay by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Now holds both TaskData and its Firestore ID
     var taskList by remember { mutableStateOf<List<Pair<TaskData, String>>?>(null) }
+
     Column(modifier = Modifier.padding(16.dp)) {
         Spacer(modifier = Modifier.height(16.dp))
         Text("Employee Task Viewer", style = MaterialTheme.typography.headlineSmall)
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Year & Month Dropdown
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DropdownField(
                 label = "Year",
@@ -60,7 +59,6 @@ fun EmployeeTaskViewer() {
             )
         }
 
-        // Second row (Week + Day)
         Row(modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -82,44 +80,41 @@ fun EmployeeTaskViewer() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 🔍 Fetch tasks button
         Button(
             onClick = {
                 if (selectedYear.isNotEmpty() && selectedMonth.isNotEmpty()
                     && selectedWeek.isNotEmpty() && selectedDay.isNotEmpty()
                 ) {
-                    isLoading = true // Start loading
+                    isLoading = true
                     val path = firestore
                         .collection("Tasks")
+                        .document(projectId)
+                        .collection(employeeEmail)
                         .document(selectedYear)
                         .collection(selectedMonth)
                         .document(selectedWeek)
                         .collection(selectedDay)
 
                     path.get().addOnSuccessListener { snapshot ->
-                        if (!snapshot.isEmpty) {
-                            val tasksWithIds = snapshot.documents.mapNotNull { doc ->
+                        taskList = if (!snapshot.isEmpty) {
+                            snapshot.documents.mapNotNull { doc ->
                                 val task = doc.toObject(TaskData::class.java)
                                 val taskId = doc.id
                                 if (task != null) task to taskId else null
                             }
-                            taskList = tasksWithIds
-                        } else {
-                            taskList = emptyList()
-                        }
-                        isLoading = false // Stop loading
+                        } else emptyList()
+                        isLoading = false
                     }.addOnFailureListener {
                         taskList = emptyList()
-                        isLoading = false // Stop loading even on failure
+                        isLoading = false
                     }
                 }
             },
-            enabled = !isLoading // Disable button while loading
+            enabled = !isLoading
         ) {
             Text(if (isLoading) "Fetching..." else "Fetch Tasks")
         }
 
-        // 👇 Show loading spinner if loading
         if (isLoading) {
             Spacer(modifier = Modifier.height(16.dp))
             CircularProgressIndicator()
@@ -127,7 +122,6 @@ fun EmployeeTaskViewer() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 📋 Display tasks or no data
         when {
             taskList == null -> {}
             taskList!!.isEmpty() -> {
@@ -135,7 +129,16 @@ fun EmployeeTaskViewer() {
             }
             else -> {
                 taskList!!.forEach { (task, taskId) ->
-                    TaskCard(task, selectedYear, selectedMonth, selectedWeek, selectedDay, taskId)
+                    TaskCard(
+                        task = task,
+                        projectId = projectId,
+                        employeeEmail = employeeEmail,
+                        year = selectedYear,
+                        month = selectedMonth,
+                        week = selectedWeek,
+                        day = selectedDay,
+                        taskId = taskId
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -147,6 +150,8 @@ fun EmployeeTaskViewer() {
 @Composable
 fun TaskCard(
     task: TaskData,
+    projectId: String,
+    employeeEmail: String,
     year: String,
     month: String,
     week: String,
@@ -157,18 +162,18 @@ fun TaskCard(
     val context = LocalContext.current
     var status by rememberSaveable(taskId) { mutableStateOf(task.status) }
 
-    Log.d("TaskCard", "taskId: $taskId | status: $status")
-
     val backgroundColor = if (status == 1)
-        Color(0xCCB2FFB2) // light green
+        Color(0xCCB2FFB2)
     else
-        Color(0xFFFFCCCC) // light red
+        Color(0xFFFFCCCC)
 
     val swipeState = rememberSwipeToDismissBoxState(
         positionalThreshold = { it * 0.5f },
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.StartToEnd && status != 1) {
                 val taskRef = db.collection("Tasks")
+                    .document(projectId)
+                    .collection(employeeEmail)
                     .document(year)
                     .collection(month)
                     .document(week)
@@ -205,13 +210,10 @@ fun TaskCard(
                     Icon(Icons.Default.Check, contentDescription = "Complete", tint = Color.White)
                 }
             } else {
-                // Completely empty background — no Box, no shape, no color
                 Spacer(modifier = Modifier.fillMaxSize())
             }
-        }
-        ,
+        },
         content = {
-            // 👇 Apply card-like design here
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -224,7 +226,6 @@ fun TaskCard(
                     Text("Category: ${task.category}", style = MaterialTheme.typography.bodyMedium)
                     Text("Type: ${task.type}", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(8.dp))
-
                     if (status == 1) {
                         Text("✅ Completed", color = Color(0xFF388E3C))
                     }
